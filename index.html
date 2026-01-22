@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>P32 HYBRID CTRL v2.1</title>
+    <title>P32 HYBRID CTRL v2.4</title>
     <style>
-        body { font-family: -apple-system, sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 5px 5px 50px 5px; }
+        body { font-family: -apple-system, sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 5px 5px 60px 5px; }
         .header { background: white; padding: 10px; border-radius: 0 0 15px 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; }
-        .mode-selector { display: flex; gap: 5px; margin-bottom: 10px; }
-        .mode-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; font-weight: bold; background: #ddd; }
+        .mode-selector, .scale-box { display: flex; gap: 5px; margin-bottom: 10px; }
+        .mode-btn, .btn-scale { flex: 1; padding: 10px; border: none; border-radius: 8px; font-weight: bold; background: #ddd; color: #555; }
         .mode-btn.active { background: #007bff; color: white; }
+        .btn-scale.active { background: #e67e22; color: white; }
         .btn-conn { background: #28a745; color: white; width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; margin-bottom: 10px; }
         .preset-box { display: flex; gap: 4px; margin: 10px 0; justify-content: space-between; }
         .btn-preset { flex: 1; padding: 8px 2px; font-size: 0.85rem; border: none; border-radius: 5px; background: #34495e; color: white; font-weight: bold; }
@@ -18,7 +19,6 @@
         .card { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .info { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; }
         input[type=range] { width: 100%; height: 30px; }
-        /* Footer de version */
         .footer-version { position: fixed; bottom: 0; left: 0; width: 100%; background: #333; color: #aaa; font-size: 0.7rem; padding: 5px 0; }
     </style>
 </head>
@@ -29,7 +29,14 @@
         <button id="mBLE" class="mode-btn active" onclick="setMode('BLE')">BLUETOOTH</button>
         <button id="mWIFI" class="mode-btn" onclick="setMode('WIFI')">WI-FI</button>
     </div>
+    
     <button id="btnConnect" class="btn-conn" onclick="connectBLE()">CONNECTER BLE</button>
+
+    <div class="scale-box">
+        <button id="b100" class="btn-scale active" onclick="setScale(100)">MAX 100</button>
+        <button id="b1000" class="btn-scale" onclick="setScale(1000)">MAX 1000</button>
+    </div>
+
     <div class="preset-box">
         <button class="btn-preset" onclick="applyPreset(0)">0%</button>
         <button class="btn-preset" onclick="applyPreset(0.25)">25%</button>
@@ -37,12 +44,12 @@
         <button class="btn-preset" onclick="applyPreset(0.75)">75%</button>
         <button class="btn-preset" onclick="applyPreset(1)">100%</button>
     </div>
+    
     <button id="btnEnvoi" class="btn-send" onclick="triggerSend()">ENVOYER TOUT</button>
 </div>
 
 <div id="ui" class="grid"></div>
-
-<div class="footer-version">VERSION: 2.1 (ASYNCHRONOUS HYBRID)</div>
+<div class="footer-version">VERSION: 2.4 (RS485 + DUAL SCALE)</div>
 
 <script>
     let rx, device, maxVal = 100, mode = 'BLE', ip = localStorage.getItem('pico_ip') || "";
@@ -73,13 +80,25 @@
         } catch (e) { alert("Erreur BLE: " + e); }
     }
 
+    function setScale(s) {
+        maxVal = s;
+        document.getElementById('b100').className = (s==100)?'btn-scale active':'btn-scale';
+        document.getElementById('b1000').className = (s==1000)?'btn-scale active':'btn-scale';
+        for (let i = 0; i < 32; i++) {
+            let sld = document.getElementById('s' + i);
+            sld.max = s;
+            sld.value = 0;
+            document.getElementById('v' + i).innerText = 0;
+        }
+        transmit("98:" + s);
+    }
+
     function applyPreset(percent) {
         const val = Math.floor(maxVal * percent);
         for (let i = 0; i < 32; i++) {
             document.getElementById('s' + i).value = val;
             document.getElementById('v' + i).innerText = val;
         }
-        // Envoi d'une commande spéciale 100:VALEUR pour dire "TOUS LES CANAUX"
         transmit("100:" + val);
     }
 
