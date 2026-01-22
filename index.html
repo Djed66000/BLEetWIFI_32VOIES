@@ -11,6 +11,11 @@
         .mode-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; font-weight: bold; background: #ddd; }
         .mode-btn.active { background: #007bff; color: white; }
         .btn-conn { background: #28a745; color: white; width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; margin-bottom: 10px; }
+        
+        /* Styles des boutons de préréglages */
+        .preset-box { display: flex; gap: 4px; margin: 10px 0; justify-content: space-between; }
+        .btn-preset { flex: 1; padding: 8px 2px; font-size: 0.85rem; border: none; border-radius: 5px; background: #34495e; color: white; font-weight: bold; }
+        
         .scale-box { display: flex; gap: 8px; margin-bottom: 10px; }
         .btn-scale { flex: 1; padding: 10px; background: #6c757d; color: white; border: none; border-radius: 8px; font-weight: bold; }
         .btn-scale.active { background: #e67e22; }
@@ -35,8 +40,16 @@
         <button id="b100" class="btn-scale active" onclick="setScale(100)">MAX 100</button>
         <button id="b1000" class="btn-scale" onclick="setScale(1000)">MAX 1000</button>
     </div>
+
+    <div class="preset-box">
+        <button class="btn-preset" onclick="applyPreset(0)">0%</button>
+        <button class="btn-preset" onclick="applyPreset(0.25)">25%</button>
+        <button class="btn-preset" onclick="applyPreset(0.50)">50%</button>
+        <button class="btn-preset" onclick="applyPreset(0.75)">75%</button>
+        <button class="btn-preset" onclick="applyPreset(1)">100%</button>
+    </div>
     
-    <button id="btnEnvoi" class="btn-send" onclick="triggerSend()">ENVOYER TOUT</button>
+    <button id="btnEnvoi" class="btn-send" onclick="triggerSend()">ENVOYER TOUT (TRAP)</button>
 </div>
 
 <div id="ui" class="grid"></div>
@@ -52,17 +65,12 @@
         document.getElementById('mBLE').className = (m=='BLE')?'mode-btn active':'mode-btn';
         document.getElementById('mWIFI').className = (m=='WIFI')?'mode-btn active':'mode-btn';
         document.getElementById('btnConnect').style.display = (m=='BLE')?'block':'none';
-        if(m === 'WIFI' && !ip) {
-            askIP();
-        }
+        if(m === 'WIFI' && !ip) askIP();
     }
 
     function askIP() {
-        let newIP = prompt("Adresse IP du Pico (ex: 10.0.0.69) :", ip);
-        if(newIP) {
-            ip = newIP;
-            localStorage.setItem('pico_ip', ip);
-        }
+        let newIP = prompt("IP du Pico :", ip);
+        if(newIP) { ip = newIP; localStorage.setItem('pico_ip', ip); }
     }
 
     async function connectBLE() {
@@ -74,7 +82,7 @@
             const server = await device.gatt.connect();
             const service = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
             rx = await service.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
-            document.getElementById('btnConnect').innerText = "✅ CONNECTÉ (BLE)";
+            document.getElementById('btnConnect').innerText = "✅ CONNECTÉ";
             document.getElementById('btnConnect').style.background = "#2ecc71";
         } catch (e) { alert("Erreur BLE: " + e); }
     }
@@ -83,15 +91,33 @@
         maxVal = s;
         document.getElementById('b100').className = (s==100)?'btn-scale active':'btn-scale';
         document.getElementById('b1000').className = (s==1000)?'btn-scale active':'btn-scale';
-        for (let i = 0; i < 32; i++) { document.getElementById('s' + i).max = s; }
+        for (let i = 0; i < 32; i++) { 
+            let sld = document.getElementById('s' + i);
+            sld.max = s; 
+            sld.value = 0; // Reset visuel
+            document.getElementById('v' + i).innerText = 0;
+        }
         transmit("98:" + s);
+    }
+
+    // FONCTION PRÉRÉGLAGES
+    function applyPreset(percent) {
+        const val = Math.floor(maxVal * percent);
+        for (let i = 0; i < 32; i++) {
+            document.getElementById('s' + i).value = val;
+            document.getElementById('v' + i).innerText = val;
+            // On ne transmet pas 32 fois pour ne pas saturer le WiFi
+            // On met juste à jour l'interface locale
+        }
+        // On envoie une commande spéciale ou on demande l'envoi global
+        alert("Valeurs réglées à " + (percent*100) + "%. Cliquez sur ENVOYER pour valider.");
     }
 
     function transmit(msg) {
         if (mode === 'BLE' && rx) {
-            rx.writeValue(new TextEncoder().encode(msg)).catch(e => console.log(e));
+            rx.writeValue(new TextEncoder().encode(msg)).catch(s => {});
         } else if (mode === 'WIFI' && ip) {
-            fetch(`http://${ip}/?c=${msg}`, { mode: 'no-cors' }).catch(e => console.log(e));
+            fetch(`http://${ip}/?c=${msg}`, { mode: 'no-cors' }).catch(s => {});
         }
     }
 
@@ -101,13 +127,11 @@
     }
 
     function triggerSend() {
+        // Avant d'envoyer 99:99, on s'assure que le Pico a les dernières valeurs des sliders
+        // (Optionnel selon ton usage, ici on envoie juste le signal de déclenchement)
         transmit("99:99");
-        const b = document.getElementById('btnEnvoi');
-        b.innerText = "TRAME ENVOYÉE !";
-        setTimeout(() => { b.innerText = "ENVOYER TOUT"; }, 1000);
     }
 
-    // Génération des 32 Sliders
     const ui = document.getElementById('ui');
     for (let i = 0; i < 32; i++) {
         ui.innerHTML += `
