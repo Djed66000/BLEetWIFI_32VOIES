@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pico 2W 32CH Control</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f2f5; padding: 15px; }
+        .header { background: white; padding: 15px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+        .card { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        button { padding: 12px 24px; font-size: 1rem; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        .btn-connect { background: #007bff; color: white; width: 100%; margin-bottom: 10px; }
+        .btn-scale { background: #6c757d; color: white; }
+        .active-scale { background: #e67e22 !important; }
+        input[type=range] { width: 100%; height: 35px; cursor: pointer; }
+        .val-num { font-weight: bold; color: #007bff; font-size: 1.2rem; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Contrôle 32 Voies</h1>
+    <button id="connBtn" class="btn-connect" onclick="connect()">1. Se connecter au Pico</button>
+    <div style="margin-top: 10px;">
+        <span>Échelle : </span>
+        <button id="s100" class="btn-scale active-scale" onclick="setScale(100)">0-100</button>
+        <button id="s1000" class="btn-scale" onclick="setScale(1000)">0-1000</button>
+    </div>
+</div>
+
+<div id="ui" class="grid" style="display:none;"></div>
+
+<script>
+    let rxChar;
+    let maxScale = 100;
+    const ui = document.getElementById('ui');
+
+    // Génération des 32 curseurs
+    for (let i = 0; i < 32; i++) {
+        ui.innerHTML += `
+            <div class="card">
+                <label>Voie ${i.toString().padStart(2, '0')}</label><br>
+                <span class="val-num" id="v${i}">0</span><br>
+                <input type="range" id="slider${i}" min="0" max="100" value="0" oninput="sendData(${i}, this.value)">
+            </div>
+        `;
+    }
+
+    function setScale(val) {
+        maxScale = val;
+        document.getElementById('s100').classList.toggle('active-scale', val === 100);
+        document.getElementById('s1000').classList.toggle('active-scale', val === 1000);
+        
+        // On met à jour tous les sliders
+        for (let i = 0; i < 32; i++) {
+            let s = document.getElementById('slider'+i);
+            let currentPct = s.value / s.max;
+            s.max = maxScale;
+            s.value = Math.round(currentPct * maxScale);
+            document.getElementById('v'+i).innerText = s.value;
+        }
+    }
+
+    async function connect() {
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+            // On cherche le nouveau nom court
+            filters: [{ name: 'P32' }], 
+            optionalServices: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e']
+        });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+            rxChar = await service.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
+            
+            document.getElementById('connBtn').innerText = "Connecté ✅";
+            document.getElementById('connBtn').style.background = "#28a745";
+            document.getElementById('ui').style.display = 'grid';
+        } catch (e) { alert("Erreur: " + e); }
+    }
+
+    function sendData(index, value) {
+        document.getElementById('v' + index).innerText = value;
+        if (rxChar) {
+            const data = new TextEncoder().encode(index + ":" + value);
+            // writeValue est plus lent mais plus fiable que WithoutResponse pour le débug
+            rxChar.writeValue(data).catch(() => {});
+        }
+    }
+</script>
+</body>
+</html>
