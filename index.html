@@ -2,90 +2,119 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pico 2W 32CH Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>P32 HYBRID CTRL</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f0f2f5; padding: 15px; }
-        .header { background: white; padding: 15px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
-        .card { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        button { padding: 12px 24px; font-size: 1rem; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; }
-        .btn-connect { background: #007bff; color: white; width: 100%; margin-bottom: 10px; }
-        .btn-scale { background: #6c757d; color: white; }
-        .active-scale { background: #e67e22 !important; }
-        input[type=range] { width: 100%; height: 35px; cursor: pointer; }
-        .val-num { font-weight: bold; color: #007bff; font-size: 1.2rem; }
+        body { font-family: -apple-system, sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 5px; }
+        .header { background: white; padding: 10px; border-radius: 0 0 15px 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; }
+        .mode-selector { display: flex; gap: 5px; margin-bottom: 10px; }
+        .mode-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; font-weight: bold; background: #ddd; }
+        .mode-btn.active { background: #007bff; color: white; }
+        .btn-conn { background: #28a745; color: white; width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; margin-bottom: 10px; }
+        .scale-box { display: flex; gap: 8px; margin-bottom: 10px; }
+        .btn-scale { flex: 1; padding: 10px; background: #6c757d; color: white; border: none; border-radius: 8px; font-weight: bold; }
+        .btn-scale.active { background: #e67e22; }
+        .btn-send { background: #d35400; color: white; width: 100%; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 1.1rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 8px; padding: 10px; }
+        .card { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .info { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; }
+        input[type=range] { width: 100%; height: 30px; }
     </style>
 </head>
 <body>
 
 <div class="header">
-    <h1>Contrôle 32 Voies</h1>
-    <button id="connBtn" class="btn-connect" onclick="connect()">1. Se connecter au Pico</button>
-    <div style="margin-top: 10px;">
-        <span>Échelle : </span>
-        <button id="s100" class="btn-scale active-scale" onclick="setScale(100)">0-100</button>
-        <button id="s1000" class="btn-scale" onclick="setScale(1000)">0-1000</button>
+    <div class="mode-selector">
+        <button id="mBLE" class="mode-btn active" onclick="setMode('BLE')">BLUETOOTH</button>
+        <button id="mWIFI" class="mode-btn" onclick="setMode('WIFI')">WI-FI</button>
     </div>
+    
+    <button id="btnConnect" class="btn-conn" onclick="connectBLE()">CONNECTER BLE</button>
+    
+    <div class="scale-box">
+        <button id="b100" class="btn-scale active" onclick="setScale(100)">MAX 100</button>
+        <button id="b1000" class="btn-scale" onclick="setScale(1000)">MAX 1000</button>
+    </div>
+    
+    <button id="btnEnvoi" class="btn-send" onclick="triggerSend()">ENVOYER TOUT</button>
 </div>
 
-<div id="ui" class="grid" style="display:none;"></div>
+<div id="ui" class="grid"></div>
 
 <script>
-    let rxChar;
-    let maxScale = 100;
-    const ui = document.getElementById('ui');
+    let rx, device;
+    let maxVal = 100;
+    let mode = 'BLE';
+    let ip = localStorage.getItem('pico_ip') || "";
 
-    // Génération des 32 curseurs
+    function setMode(m) {
+        mode = m;
+        document.getElementById('mBLE').className = (m=='BLE')?'mode-btn active':'mode-btn';
+        document.getElementById('mWIFI').className = (m=='WIFI')?'mode-btn active':'mode-btn';
+        document.getElementById('btnConnect').style.display = (m=='BLE')?'block':'none';
+        if(m === 'WIFI' && !ip) {
+            askIP();
+        }
+    }
+
+    function askIP() {
+        let newIP = prompt("Adresse IP du Pico (ex: 10.0.0.69) :", ip);
+        if(newIP) {
+            ip = newIP;
+            localStorage.setItem('pico_ip', ip);
+        }
+    }
+
+    async function connectBLE() {
+        try {
+            device = await navigator.bluetooth.requestDevice({
+                filters: [{ name: 'P32H' }],
+                optionalServices: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e']
+            });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+            rx = await service.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
+            document.getElementById('btnConnect').innerText = "✅ CONNECTÉ (BLE)";
+            document.getElementById('btnConnect').style.background = "#2ecc71";
+        } catch (e) { alert("Erreur BLE: " + e); }
+    }
+
+    function setScale(s) {
+        maxVal = s;
+        document.getElementById('b100').className = (s==100)?'btn-scale active':'btn-scale';
+        document.getElementById('b1000').className = (s==1000)?'btn-scale active':'btn-scale';
+        for (let i = 0; i < 32; i++) { document.getElementById('s' + i).max = s; }
+        transmit("98:" + s);
+    }
+
+    function transmit(msg) {
+        if (mode === 'BLE' && rx) {
+            rx.writeValue(new TextEncoder().encode(msg)).catch(e => console.log(e));
+        } else if (mode === 'WIFI' && ip) {
+            fetch(`http://${ip}/?c=${msg}`, { mode: 'no-cors' }).catch(e => console.log(e));
+        }
+    }
+
+    function updateVal(idx, val) {
+        document.getElementById('v' + idx).innerText = val;
+        transmit(idx + ":" + val);
+    }
+
+    function triggerSend() {
+        transmit("99:99");
+        const b = document.getElementById('btnEnvoi');
+        b.innerText = "TRAME ENVOYÉE !";
+        setTimeout(() => { b.innerText = "ENVOYER TOUT"; }, 1000);
+    }
+
+    // Génération des 32 Sliders
+    const ui = document.getElementById('ui');
     for (let i = 0; i < 32; i++) {
         ui.innerHTML += `
             <div class="card">
-                <label>Voie ${i.toString().padStart(2, '0')}</label><br>
-                <span class="val-num" id="v${i}">0</span><br>
-                <input type="range" id="slider${i}" min="0" max="100" value="0" oninput="sendData(${i}, this.value)">
-            </div>
-        `;
-    }
-
-    function setScale(val) {
-        maxScale = val;
-        document.getElementById('s100').classList.toggle('active-scale', val === 100);
-        document.getElementById('s1000').classList.toggle('active-scale', val === 1000);
-        
-        // On met à jour tous les sliders
-        for (let i = 0; i < 32; i++) {
-            let s = document.getElementById('slider'+i);
-            let currentPct = s.value / s.max;
-            s.max = maxScale;
-            s.value = Math.round(currentPct * maxScale);
-            document.getElementById('v'+i).innerText = s.value;
-        }
-    }
-
-    async function connect() {
-        try {
-            const device = await navigator.bluetooth.requestDevice({
-            // On cherche le nouveau nom court
-            filters: [{ name: 'P32' }], 
-            optionalServices: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e']
-        });
-            const server = await device.gatt.connect();
-            const service = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
-            rxChar = await service.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
-            
-            document.getElementById('connBtn').innerText = "Connecté ✅";
-            document.getElementById('connBtn').style.background = "#28a745";
-            document.getElementById('ui').style.display = 'grid';
-        } catch (e) { alert("Erreur: " + e); }
-    }
-
-    function sendData(index, value) {
-        document.getElementById('v' + index).innerText = value;
-        if (rxChar) {
-            const data = new TextEncoder().encode(index + ":" + value);
-            // writeValue est plus lent mais plus fiable que WithoutResponse pour le débug
-            rxChar.writeValue(data).catch(() => {});
-        }
+                <div class="info"><span>CH ${i+1}</span><span id="v${i}" style="color:#007bff">0</span></div>
+                <input type="range" id="s${i}" min="0" max="100" value="0" oninput="updateVal(${i}, this.value)">
+            </div>`;
     }
 </script>
 </body>
